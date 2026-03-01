@@ -7,14 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-      #  with:
-      #    repository: ${{ vars.REPOSITORY }}
-      #    ref: ${{ vars.REF }}
+        uses: actions/checkout@v4
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v7.1.4
-
 
       - name: Run script
         env:
@@ -31,26 +27,35 @@ jobs:
           printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
           echo "Use custom config: "
           cat config/custom.yaml
-          echo "===== PROBE 1: curl arXiv RSS ====="
+
+          echo "===== PROBE 1: curl arXiv RSS (headers) ====="
           set -x
-          curl -I "https://rss.arxiv.org/atom/cs.CV" || true
-          curl -s "https://rss.arxiv.org/atom/cs.CV" | head -n 40 || true
+          curl -I --max-time 20 --retry 3 --retry-delay 2 "https://rss.arxiv.org/atom/cs.CV" || true
           set +x
 
+          echo "===== PROBE 1b: count <entry> (cs.CV/cs.AI/cs.LG) ====="
+          for c in cs.CV cs.AI cs.LG; do
+            echo "---- $c ----"
+            curl -s --max-time 20 --retry 3 --retry-delay 2 "https://rss.arxiv.org/atom/$c" | grep -c "<entry" || true
+            curl -s --max-time 20 --retry 3 --retry-delay 2 "https://rss.arxiv.org/atom/$c" | head -n 25 || true
+          done
+
           echo "===== PROBE 2: feedparser parse RSS ====="
-          python - <<'PY'
-          import feedparser
+          uv run python - <<'PY'
+          import feedparser, collections
           url = "https://rss.arxiv.org/atom/cs.CV"
           f = feedparser.parse(url)
           print("url:", url)
           print("feed.title:", getattr(f.feed, "title", None))
-          print("entries:", len(getattr(f, "entries", [])))
+          print("feed.updated:", getattr(f.feed, "updated", None))
+          entries = getattr(f, "entries", [])
+          print("entries:", len(entries))
           print("bozo:", getattr(f, "bozo", None))
           print("bozo_exception:", getattr(f, "bozo_exception", None))
-          if getattr(f, "entries", None):
-            e = f.entries[0]
-            print("first.id:", getattr(e, "id", None))
-            print("first.title:", getattr(e, "title", None))
+          types = collections.Counter(getattr(e, "arxiv_announce_type", "NONE") for e in entries)
+          print("announce_type counts:", dict(types))
+          for e in entries[:5]:
+            print("sample:", getattr(e, "arxiv_announce_type", None), getattr(e, "id", None), getattr(e, "title", None))
           PY
 
           echo "===== RUN main ====="
