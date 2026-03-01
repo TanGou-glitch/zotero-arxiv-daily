@@ -31,4 +31,27 @@ jobs:
           printf "%b\n" "$CUSTOM_CONFIG" > config/custom.yaml
           echo "Use custom config: "
           cat config/custom.yaml
+          echo "===== PROBE 1: curl arXiv RSS ====="
+          set -x
+          curl -I "https://rss.arxiv.org/atom/cs.CV" || true
+          curl -s "https://rss.arxiv.org/atom/cs.CV" | head -n 40 || true
+          set +x
+
+          echo "===== PROBE 2: feedparser parse RSS ====="
+          python - <<'PY'
+          import feedparser
+          url = "https://rss.arxiv.org/atom/cs.CV"
+          f = feedparser.parse(url)
+          print("url:", url)
+          print("feed.title:", getattr(f.feed, "title", None))
+          print("entries:", len(getattr(f, "entries", [])))
+          print("bozo:", getattr(f, "bozo", None))
+          print("bozo_exception:", getattr(f, "bozo_exception", None))
+          if getattr(f, "entries", None):
+            e = f.entries[0]
+            print("first.id:", getattr(e, "id", None))
+            print("first.title:", getattr(e, "title", None))
+          PY
+
+          echo "===== RUN main ====="
           uv run src/zotero_arxiv_daily/main.py
